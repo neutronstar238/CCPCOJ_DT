@@ -16,7 +16,7 @@
 
 下载 ZIP 和校验文件后，在 PowerShell 使用 `Get-FileHash -Algorithm SHA256 .\CSGOJ-Deployment-Console-Windows-v1.10.3.zip` 核对摘要。完整解压后双击 `启动部署工作台.cmd`。无需预先安装 Python、Node.js、Ansible 或 PuTTY；程序仅监听本机回环地址。关闭网页不会必然结束后台程序，退出工作台也不会自动关闭已部署的业务服务。
 
-完整指南：[README](https://github.com/neutronstar238/CCPCOJ_DT/blob/v1.10.3/README.md)。
+完整指南：[README](https://github.com/neutronstar238/CCPCOJ_DT/blob/main/README.md)。
 
 ## 完整功能
 
@@ -77,14 +77,6 @@
 - WEB-09：长连续路径在 360 像素窄屏换行，不再撑大整个页面。
 
 同时修复 WSL 命令和保活进程继承程序目录的问题，减少发布文件夹被后台进程占用的情况。
-
-## 验证与发布检查
-
-本地回归：165 项 Python 测试、22 项 JavaScript 测试通过。另完成隔离浏览器交互、手机窄屏、冻结 EXE 启动、静态资源一致性、小型真实 Docker-save 导入及 ZIP / 文件清单完整性检查。
-
-公开仓库采用源码文件白名单；构建后检查 ZIP、嵌套模板与 EXE 内 Python 载荷的敏感文件、凭据特征和个人路径。验收目录仅包含 Markdown。测试中的假账号、占位口令及保留示例域名是回归数据，不是生产凭据。自动扫描不是对所有潜在敏感信息的绝对保证，发布前还核对了文件清单及文档。
-
-本次没有连接生产 Web / PCJ，没有重新执行全规模真实比赛、全新服务器安装或完整数据库冷迁移。镜像源和代理的公网可用性因环境而异；首次部署和恢复应先在可弃置环境演练。详细记录见 [本地验收](https://github.com/neutronstar238/CCPCOJ_DT/blob/v1.10.3/verification/v1.10.3-ui-races.md)。
 
 ## 后续使用与问题反馈
 
