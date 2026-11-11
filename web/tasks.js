@@ -1,9 +1,9 @@
 'use strict';
 // One task lock across pages; release only after the terminal result is applied.
-const taskActivity={remote:false,ssh:false,artifacts:false,local:false};
+const taskActivity={remote:false,ssh:false,artifacts:false,local:false,arena:false,scan:false};
 const taskApplying=new Set(),taskStarting=new Set(),taskApplied={};
-const taskOwners={'state':'remote','ssh/state':'ssh','artifacts/state':'artifacts','local/state':'local'};
-const taskStarts={'run':'remote','ssh/run':'ssh','artifacts/run':'artifacts','local/run':'local'};
+const taskOwners={'state':'remote','ssh/state':'ssh','artifacts/state':'artifacts','local/state':'local','arena/state':'arena','arena/scan/state':'scan'};
+const taskStarts={'run':'remote','ssh/run':'ssh','artifacts/run':'artifacts','local/run':'local','arena/run':'arena','arena/scan/start':'scan'};
 let taskEpoch=0;
 function updateTaskControls(){
  running=Object.values(taskActivity).some(Boolean)||taskApplying.size>0||taskStarting.size>0;
@@ -11,7 +11,7 @@ function updateTaskControls(){
  if(typeof renderSSHControls==='function')renderSSHControls();
  if(typeof renderArtifactControls==='function')renderArtifactControls();
  document.querySelectorAll('main button,main input,main select,dialog button,dialog input,dialog select').forEach(el=>{
-  if(['stop','localStopTask','cancelNode','sshCancelImport','cancelImport','archiveDeleteCancel'].includes(el.id))return;
+  if(['stop','localStopTask','arenaScanStop','cancelNode','sshCancelImport','cancelImport','archiveDeleteCancel'].includes(el.id))return;
   // Keep each control's own validation/selection-based disabled state intact.
   if(running){el.inert=true;el.setAttribute('data-task-lock','');el.setAttribute('aria-disabled','true');}
   else if(el.hasAttribute('data-task-lock')){el.inert=false;el.removeAttribute('inert');el.removeAttribute('data-task-lock');el.removeAttribute('aria-disabled');}

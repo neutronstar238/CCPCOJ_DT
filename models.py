@@ -4,6 +4,7 @@ import re
 import secrets
 from pathlib import PurePosixPath
 from urllib.parse import urlsplit
+from ssh_auth import normalize_auth
 
 IMAGES = ['mysql:8.0.32', 'nginx:1.29.7-alpine', 'phpmyadmin:5.2.3']
 
@@ -26,6 +27,8 @@ def normalize(raw):
     if not isinstance(c.get('nodes'), list):
         raise ValueError('节点列表格式错误')
     for n in c['nodes']:
+        n.setdefault('user', 'root')
+        normalize_auth(n)
         if n.get('targetVersion','') and not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}',n['targetVersion']):
             raise ValueError('节点目标版本格式错误：'+n.get('id',''))
         for f in ('id', 'keyName'):
@@ -128,7 +131,7 @@ def protect_managed(previous, current):
 def redact(text, config):
     values = []
     for n in config.get('nodes', []):
-        values += [n.get('password'), n.get('elevatePassword'), n.get('judgePassword')]
+        values += [n.get('password'), n.get('elevatePassword'), n.get('judgePassword'), n.get('keyPassphrase')]
         values += list(n.get('secrets', {}).values())
     for v in sorted((str(x) for x in values if x), key=len, reverse=True): text = text.replace(v, '[已隐藏]')
     return text

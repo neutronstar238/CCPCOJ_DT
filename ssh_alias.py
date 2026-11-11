@@ -7,6 +7,7 @@ import tempfile
 import threading
 
 import paramiko
+from ssh_auth import key_path, load_key
 
 _lock = threading.Lock()
 
@@ -19,7 +20,7 @@ def _render_alias(node, store, directory, text, update_existing=False):
     host, user, port = node['host'], node['user'], int(node['sshPort'])
     if not re.fullmatch(r'[A-Za-z0-9.-]+', host) or not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', user) or not 1 <= port <= 65535:
         raise ValueError('SSH 别名连接参数错误')
-    key = (store.root / 'keys' / name).resolve()
+    key = key_path(node, store).resolve()
     if not key.is_file():
         raise ValueError('SSH 别名对应的私钥不存在')
 
@@ -39,7 +40,7 @@ def _render_alias(node, store, directory, text, update_existing=False):
     if not owned and any(name.lower() == alias.lower() for alias in cfg.get_hostnames()):
         existing = cfg.lookup(name)
         identities = existing.get('identityfile', [])
-        fingerprint = paramiko.PKey.from_path(key).fingerprint
+        fingerprint = load_key(node, key).fingerprint
         def same_identity(value):
             candidate = Path(value).expanduser().resolve()
             if candidate == key: return True

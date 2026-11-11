@@ -11,11 +11,14 @@ from storage import dpapi, restrict
 from models import normalize, protect_managed, redact
 from transport import Remote
 from ssh_alias import sync_aliases
+from ssh_auth import normalize_auth, key_path, load_key
 
-FIELDS = ('keyName', 'host', 'user', 'sshPort', 'password')
+FIELDS = ('keyName', 'host', 'user', 'sshPort', 'password', 'privateKeyPath', 'keyPassphrase')
 
 def validate(profile):
     p = {k: profile.get(k, '') for k in FIELDS}
+    if 'user' not in profile: p['user'] = 'root'
+    normalize_auth(p)
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,39}', p['keyName']): raise ValueError('私钥文件名格式错误')
     if not re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?', p['host']): raise ValueError('请填写服务器 IPv4 或域名')
     if not re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', p['user']): raise ValueError('SSH 登录账号格式错误')
@@ -40,15 +43,15 @@ class SSHManager:
     def describe(self):
         result = []
         for p in self.profiles():
-            item = dict(p); path = self.store.root / 'keys' / p['keyName']
+            item = dict(p); path = key_path(p, self.store)
             item.update(localPath=str(path), exists=path.exists())
             if path.exists():
-                try: item['fingerprint'] = paramiko.PKey.from_path(path).fingerprint
+                try: item['fingerprint'] = load_key(p, path).fingerprint
                 except Exception: item['keyError'] = '私钥无法读取（可能已加密或格式不支持）'
             result.append(item)
         return result
     def save(self, records):
-        if len(records) > 300: raise ValueError('最多 300 条 SSH 连接')
+        if len(records) > 4096: raise ValueError('最多 4096 条 SSH 连接')
         profiles = [validate(r) for r in records]
         if len({p['keyName'] for p in profiles}) != len(profiles): raise ValueError('私钥名称重复')
         before = self.store.load(); updated = copy.deepcopy(before)
@@ -57,7 +60,7 @@ class SSHManager:
             for n in updated.get('nodes', []):
                 if n['keyName'] in mapping: n.update(mapping[n['keyName']])
             if updated.get('nodes'): updated = protect_managed(before, normalize(updated))
-        keyed = [p for p in profiles if (self.store.root / 'keys' / p['keyName']).is_file()]
+        keyed = [p for p in profiles if key_path(p, self.store).is_file()]
         sync_aliases(keyed, self.store, self.ssh_dir, update_existing=True)
         path = self.store.root / 'ssh-connections.dpapi'; tmp = path.with_suffix('.tmp')
         tmp.write_bytes(dpapi(json.dumps(profiles, ensure_ascii=False).encode())); restrict(tmp)
@@ -77,12 +80,12 @@ class SSHManager:
             if not key.is_absolute(): key = self.ssh_dir / key
             if not (prefix(alias) or prefix(key.name)): continue
             name = alias if prefix(alias) else key.name
-            rows[name] = dict(keyName=name, host=c.get('hostname',alias), user=c.get('user','ccpc00'), sshPort=int(c.get('port',22)), password='', sourcePath=str(key))
+            rows[name] = dict(keyName=name, host=c.get('hostname',alias), user=c.get('user','root'), sshPort=int(c.get('port',22)), password='', sourcePath=str(key))
         # Keys can exist before a matching SSH config entry; the user supplies the address.
         if self.ssh_dir.exists():
             for key in sorted(self.ssh_dir.iterdir()):
                 if key.is_file() and prefix(key.name) and key.name not in rows:
-                    rows[key.name] = dict(keyName=key.name,host='',user='ccpc00',sshPort=22,password='',sourcePath=str(key))
+                    rows[key.name] = dict(keyName=key.name,host='',user='root',sshPort=22,password='',sourcePath=str(key))
         for row in rows.values():
             key = Path(row['sourcePath'])
             row['exists'] = key.is_file()
@@ -136,8 +139,9 @@ class SSHManager:
             try:
                 label = {'generate':'生成本地密钥','authorize':'自动配置免密 SSH','test':'仅测试密钥登录（不使用密码）','testPassword':'仅测试密码登录（不使用密钥）'}[action]
                 self.log(name + '：' + label)
-                if action in ('generate','authorize'): self.store.key(name)
-                path = self.store.root / 'keys' / name
+                if action in ('generate','authorize') and not p.get('privateKeyPath'): self.store.key(name)
+                path = key_path(p, self.store)
+                if p.get('privateKeyPath') and action == 'generate': load_key(p, path)
                 if action != 'testPassword' and not path.exists(): raise ValueError('本地私钥尚未生成或导入；首次连接请点击“自动配置免密 SSH”')
                 if action != 'generate':
                     n = dict(p, id=name)

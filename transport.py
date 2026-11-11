@@ -8,6 +8,9 @@ import shlex
 import time
 import uuid
 import paramiko
+import socket
+import network_policy as network
+from ssh_auth import key_path, load_key
 
 class PinPolicy(paramiko.MissingHostKeyPolicy):
     def __init__(self, store, log): self.store, self.log = store, log
@@ -28,25 +31,40 @@ class Remote:
         known = self.store.root / 'known_hosts'
         if known.exists(): self.ssh.load_host_keys(str(known))
         self.ssh.set_missing_host_key_policy(PinPolicy(self.store, self.log))
-        keyfile = self.store.root / 'keys' / n['keyName']
+        keyfile = key_path(n, self.store)
         args = dict(hostname=n['host'], port=n['sshPort'], username=n['user'], timeout=12, banner_timeout=20, auth_timeout=20, allow_agent=False, look_for_keys=False)
-        if not password_only and keyfile.exists(): args['pkey'] = paramiko.PKey.from_path(keyfile)
-        if n.get('password'): args['password'] = n['password']
-        try: self.ssh.connect(**args)
+        if not password_only and (keyfile.exists() or n.get('privateKeyPath')): args['pkey'] = load_key(n, keyfile)
+        if n.get('password') and (password_only or not n.get('privateKeyPath')): args['password'] = n['password']
+        route = None
+        if os.name == 'nt':
+            address = socket.gethostbyname(n['host'])
+            if not address.startswith('127.'):
+                route = network.select(network.snapshot(), address)
+                self.log('网络出口：' + network.describe(route))
+        def open_connection():
+            if route: args['sock'] = network.connect(address, n['sshPort'], route)
+            try: self.ssh.connect(**args)
+            except BaseException:
+                if args.get('sock'): args.pop('sock').close()
+                raise
+        try: open_connection()
         except Exception:
             self.close(); raise
         self.ssh.get_transport().set_keepalive(20)
         if bootstrap:
             self.log(n['id'] + '：首次连接成功，正在写入服务器公钥')
-            keyfile, pub = self.store.key(n['keyName'])
+            if n.get('privateKeyPath'):
+                selected_key = load_key(n, keyfile)
+                pub = selected_key.get_name() + ' ' + selected_key.get_base64()
+            else: keyfile, pub = self.store.key(n['keyName'])
             self.run('umask 077; mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"; touch "$HOME/.ssh/authorized_keys"; chmod 600 "$HOME/.ssh/authorized_keys"; grep -qxF -- ' + shlex.quote(pub) + ' "$HOME/.ssh/authorized_keys" || printf "\\n%s\\n" ' + shlex.quote(pub) + ' >> "$HOME/.ssh/authorized_keys"')
             self.close()
             self.ssh = paramiko.SSHClient()
             if system_known.exists(): self.ssh.load_system_host_keys(str(system_known))
             if known.exists(): self.ssh.load_host_keys(str(known))
             self.ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
-            args.pop('password', None); args['pkey'] = paramiko.PKey.from_path(keyfile)
-            try: self.ssh.connect(**args)
+            args.pop('password', None); args['pkey'] = load_key(n, keyfile)
+            try: open_connection()
             except paramiko.AuthenticationException as e:
                 self.close()
                 raise paramiko.AuthenticationException('公钥已写入，但纯密钥复验被服务器拒绝；请检查 sshd 公钥认证设置和用户目录权限') from e
@@ -116,7 +134,7 @@ class Remote:
                             last[0] = pct // 5
                             self.log(f'{self.n["id"]}：镜像上传 {pct}%（{done/1048576:.0f}/{total/1048576:.0f} MB）')
                     s.put(str(archive), tmp + '/image.tar', callback=progress)
-                remote_node = {k: v for k, v in self.n.items() if k not in ('password', 'elevatePassword')}
+                remote_node = {k: v for k, v in self.n.items() if k not in ('password', 'elevatePassword', 'privateKeyPath', 'keyPassphrase')}
                 remote_config = {k: config[k] for k in ('version', 'mirror', 'disableGui', 'neverSleep', 'performance', 'tool') if k in config}
                 payload = dict(action=action, node=remote_node, config=remote_config, extra=extra or {}, tool=tmp + '/deployer' if tool else '')
                 if archive: payload['extra'] = dict(payload['extra'], archive=tmp + '/image.tar')

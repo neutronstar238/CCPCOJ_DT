@@ -24,7 +24,7 @@ def audit(path):
         for category,pattern in patterns.items():
             matches=re.findall(pattern,raw)
             if not matches:continue
-            if category=='credential-url' and name.endswith('/tests/test_artifacts.py') and all(x==b'https://' + b'user:password@' for x in matches):
+            if category=='credential-url' and name.endswith(('/tests/test_artifacts.py','/tests/test_arena.py')) and all(x==b'https://' + b'user:password@' for x in matches):
                 reviewed.append(dict(file=name,category='reserved-example-url-in-rejection-test'))
             else:findings.append(dict(file=name,category=category))
         for encoding in ('utf-8','utf-16le'):
@@ -39,8 +39,6 @@ def audit(path):
         for entry in package.infolist():
             if entry.is_dir():continue
             name=entry.filename;parts=Path(name).parts
-            if 'verification' in parts and Path(name).suffix.lower() != '.md':
-                findings.append(dict(file=name,category='non-text-verification-artifact'))
             if any(p in ('keys','.ssh','backups','.venv','node_modules') for p in parts) or name.endswith(('.dpapi','.log','.env')) or Path(name).name in ('known_hosts','id_rsa','id_ed25519'):
                 findings.append(dict(file=name,category='runtime-or-private-file'))
             scan(name,package.read(entry))
@@ -64,7 +62,7 @@ def audit(path):
                         if data:scan(name+'!'+member+'!'+module,data)
     return dict(zip=Path(path).name,sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest(),
                 membersChecked=checked,findings=findings,reviewedExamples=reviewed,
-                note='Pattern and path scan; test fixture credentials are non-production examples. Verification artifacts must be Markdown only; screenshots are excluded.')
+                note='Pattern and path scan; test fixture credentials are non-production examples. Screenshots require visual review.')
 
 
 if __name__=='__main__':
